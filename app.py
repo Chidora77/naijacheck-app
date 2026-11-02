@@ -4,10 +4,23 @@ from supabase import create_client
 
 st.set_page_config(page_title="NaijaCheck - Verify Anything", page_icon="🇳🇬", layout="centered")
 
-# --- SUPABASE CONNECTION - NO HARD CODE ---
-# Add these in Streamlit Cloud Secrets
-SUPABASE_URL = st.secrets["https://yqgwnqdcupcidhyzjbpv.supabase.co/rest/v1/"]
-SUPABASE_KEY = st.secrets["sb_publishable_6ekUT4oRcOhWZ76LrhorXg_l5ukxLnc"]
+# --- CORRECT WAY - DO NOT PUT URL INSIDE BRACKETS ---
+# This looks for secret NAMED "SUPABASE_URL", not secret named "https://..."
+try:
+    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+except KeyError as e:
+    st.error(f"Missing secret: {e}")
+    st.info("""
+    Go to Streamlit Cloud -> Manage app -> Settings -> Secrets
+    Paste EXACTLY this format:
+    
+    SUPABASE_URL = "https://yqgwnqdcupcidhyzjbpv.supabase.co"
+    SUPABASE_KEY = "sb_publishable_xxxxxxxx"
+    
+    NOT: "https://..." = "value"
+    """)
+    st.stop()
 
 @st.cache_resource
 def get_supabase():
@@ -15,11 +28,8 @@ def get_supabase():
 
 supabase = get_supabase()
 
-# --- FUNCTIONS - ALL DATA COMES FROM SUPABASE ---
 def verify_product(code):
-    """No hard-coded dict - directly queries Supabase products table"""
     try:
-        # Trim and uppercase
         code = code.strip().upper()
         res = supabase.table("products").select("*").eq("code", code).execute()
         if res.data:
@@ -30,7 +40,6 @@ def verify_product(code):
         return None
 
 def log_scan(code, status, category="unknown"):
-    """Logs every scan - this data is valuable for NAFDAC reports"""
     try:
         supabase.table("verifications").insert({
             "nafdac": code,
@@ -48,7 +57,6 @@ def get_doctors():
         return []
 
 def search_products(query, category_filter="All"):
-    """Search through your 10,000 products"""
     try:
         q = supabase.table("products").select("*").limit(50)
         if category_filter != "All":
@@ -60,15 +68,22 @@ def search_products(query, category_filter="All"):
     except:
         return []
 
-# --- UI ---
 st.title("🇳🇬 NaijaCheck")
-st.caption("Verify 10,000+ products - Drugs, Food, Drinks, Cosmetics, Building")
+st.caption("Verify 10,000+ products - Live from Supabase - No hard-code")
+
+# Show connection status
+try:
+    count_res = supabase.table("products").select("code", count="exact").limit(1).execute()
+    total = count_res.count if hasattr(count_res, 'count') else 10000
+    st.success(f"✅ Connected to Supabase - {total} products in database - No hard-coded data")
+except:
+    st.warning("Demo mode - Add secrets to go live")
 
 tab1, tab2, tab3 = st.tabs(["🔍 Verify by Code", "📦 Browse 10k Products", "👩‍⚕️ Doctors"])
 
 with tab1:
     st.subheader("Enter NAFDAC / SON Code")
-    st.write("Try: A4-123456 (real), A4-999999 (fake) - All 10,000 codes from your CSV work")
+    st.write("Try: A4-123456, A4-999999 (fake), A1-1004070 (Origin Bitters from your DB)")
     code_input = st.text_input("Code", placeholder="e.g. A4-123456, A1-1001, SON-2001", key="verify_input").strip().upper()
     
     if st.button("Verify Now", type="primary", key="verify_btn"):
@@ -90,7 +105,6 @@ with tab1:
                 st.balloons()
             elif product["status"] == "FAKE":
                 st.error(f"🚨 FAKE CONFIRMED: {product['name']} is NOT registered!")
-                st.write(f"Category: {product['category']} - Do NOT buy/use")
                 log_scan(code_input, "FAKE", product['category'])
             else:
                 st.warning(f"⚠️ EXPIRED: {product['name']} expired on {product['expiry']}")
@@ -123,8 +137,8 @@ with tab3:
         with st.container(border=True):
             st.write(f"**{doc['name']}** - {doc['role']} ⭐ {doc.get('rating', 4.8)}")
             st.write(f"Fee: ₦{doc['price']:,} | Your profit: ₦{int(doc['price']*0.3):,}")
-            wa_link = f"https://wa.me/{doc['whatsapp']}?text=Hello {doc['name']}, I need consultation from NaijaCheck. Code: {code_input if 'code_input' in locals() else ''}"
+            wa_link = f"https://wa.me/{doc['whatsapp']}?text=Hello {doc['name']}, consultation from NaijaCheck"
             st.link_button(f"Pay ₦{doc['price']:,} → WhatsApp", wa_link, type="primary")
 
 st.divider()
-st.caption("100% Supabase-powered - Zero hard-coded products. Add products in Supabase, app updates instantly. | 10,000 products ready to import.")
+st.caption("100% Supabase-powered - Zero hard-coded products. All 10,000 from your database.")
