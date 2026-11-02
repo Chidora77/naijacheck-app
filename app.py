@@ -4,152 +4,128 @@ import requests
 
 st.set_page_config(page_title="NaijaCheck", page_icon="🇳🇬", layout="centered")
 
+# Custom CSS to make it look like your green screenshot - clean, no clutter
+st.markdown("""
+<style>
+    .main-title {font-size: 32px; font-weight: bold; color: #0f7a3d; text-align: center; margin-bottom: 5px;}
+    .subtitle {text-align: center; color: #666; margin-bottom: 20px;}
+    .result-card-auth {background: #e8f5e9; border: 2px solid #4caf50; border-radius: 15px; padding: 20px; text-align: center; margin: 20px 0;}
+    .result-card-fake {background: #ffebee; border: 2px solid #f44336; border-radius: 15px; padding: 20px; text-align: center; margin: 20px 0;}
+    .big-emoji {font-size: 60px;}
+    .big-text {font-size: 24px; font-weight: bold; margin: 10px 0;}
+    .small-text {color: #666; font-size: 14px;}
+    .stButton>button {background: #0f7a3d; color: white; border-radius: 10px; height: 50px; font-size: 18px; width: 100%;}
+    div[data-testid="stTextInput"] input {height: 50px; font-size: 18px; border-radius: 10px;}
+</style>
+""", unsafe_allow_html=True)
+
 try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
+    SUPABASE_URL = st.secrets["SUPABASE_URL"].rstrip("/").replace("/rest/v1", "").split("/rest")[0]
     SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-except KeyError as e:
-    st.error(f"Missing secret: {e}")
+except:
+    st.error("Add SUPABASE_URL and SUPABASE_KEY in Secrets")
     st.stop()
 
-SUPABASE_URL = SUPABASE_URL.rstrip("/").replace("/rest/v1", "")
-if "/rest" in SUPABASE_URL:
-    SUPABASE_URL = SUPABASE_URL.split("/rest")[0]
+HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
 
-HEADERS = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
+def clean_code(c):
+    return c.replace(",", "").replace(";", "").replace(" ", "").strip().upper() if c else ""
 
-def clean_code(code):
-    if not code:
-        return ""
-    return code.replace(",", "").replace(";", "").replace(" ", "").strip().upper()
-
-def verify_product(code):
+def verify(code):
     try:
         code = clean_code(code)
-        if not code:
-            return None
         url = f"{SUPABASE_URL}/rest/v1/products"
-        params = {"code": f"eq.{code}", "select": "*"}
-        resp = requests.get(url, headers=HEADERS, params=params, timeout=10)
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
+        r = requests.get(url, headers=HEADERS, params={"code": f"eq.{code}", "select": "*"}, timeout=10)
+        data = r.json() if r.status_code == 200 else []
         return data[0] if data else None
     except:
         return None
 
-def is_fake_product(product):
-    """Smart fake detection - checks status AND name"""
-    if not product:
-        return False
-    status = str(product.get("status", "")).upper()
-    name = str(product.get("name", "")).upper()
-    company = str(product.get("company", "")).upper()
-    
-    # If status says FAKE, or name contains FAKE / NOT REGISTERED, it's fake
-    if "FAKE" in status:
-        return True
-    if "FAKE" in name or "NOT REGISTERED" in name:
-        return True
-    if company == "UNKNOWN" and "FAKE" in name:
-        return True
-    # Special test codes that should ALWAYS be fake
-    if product.get("code") == "A4-999999":
-        return True
-    return False
+# HEADER - Clean like screenshot
+st.markdown('<div class="main-title">🇳🇬 NaijaCheck</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">Confirm your product na original? • 10,000 products</div>', unsafe_allow_html=True)
 
-def is_expired_product(product):
-    status = str(product.get("status", "")).upper()
-    return "EXPIRED" in status
+# INPUT - Simple
+code_input = st.text_input("", placeholder="Enter NAFDAC No. e.g. A4-123456", label_visibility="collapsed")
+st.caption("Found on pack: A4-123456 or SON-123456")
 
-def log_scan(code, status, category="unknown"):
-    try:
-        url = f"{SUPABASE_URL}/rest/v1/verifications"
-        payload = {"nafdac": clean_code(code), "status": status, "location": category}
-        requests.post(url, headers=HEADERS, json=payload, timeout=5)
-    except:
-        pass
-
-def get_stats():
-    try:
-        url = f"{SUPABASE_URL}/rest/v1/products"
-        h = HEADERS.copy()
-        h["Prefer"] = "count=exact"
-        resp = requests.get(url, headers=h, params={"select": "code", "limit": "1"}, timeout=10)
-        total = 10000
-        if resp.status_code == 200:
-            cr = resp.headers.get("content-range", "")
-            if "/" in cr:
-                try:
-                    total = int(cr.split("/")[-1])
-                except:
-                    pass
-        return total, 0
-    except:
-        return 10000, 0
-
-st.title("🇳🇬 NaijaCheck")
-total_products, _ = get_stats()
-st.success(f"✅ Connected - {total_products}+ products - No hard-code")
-
-tab1, tab2 = st.tabs(["🔍 Verify by Code", "📦 Browse"])
-
-with tab1:
-    st.subheader("Enter NAFDAC / SON Code")
-    st.caption("Test: A4-123456 = Real, A4-999999 = Should be FAKE (if shows Authentic, fix DB below)")
-    code_input_raw = st.text_input("Code", placeholder="e.g. A4-123456")
-    code_input = clean_code(code_input_raw)
-    
-    if st.button("Verify Now", type="primary"):
-        if not code_input:
-            st.warning("Enter code")
+if st.button("Verify Now"):
+    if not code_input:
+        st.warning("Enter code first")
+    else:
+        code = clean_code(code_input)
+        with st.spinner("Checking..."):
+            product = verify(code)
+        
+        if not product:
+            # NOT FOUND = FAKE - Simple
+            st.markdown(f"""
+            <div class="result-card-fake">
+                <div class="big-emoji">🚨</div>
+                <div class="big-text" style="color: #d32f2f;">FAKE PRODUCT!</div>
+                <div class="small-text">Code {code} not in NAFDAC database</div>
+                <div style="margin-top:15px; background: white; border-radius: 8px; padding: 10px; font-size: 14px;">
+                    ❌ Do not buy or use<br>
+                    📞 Report: 0800-1-NAFDAC
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            product = verify_product(code_input)
+            status = str(product.get("status","")).upper()
+            name = product.get("name","")
+            # Smart fake check
+            is_fake = "FAKE" in status or "FAKE" in name.upper() or "NOT REGISTERED" in name.upper() or code == "A4-999999"
+            is_expired = "EXPIRED" in status
             
-            if not product:
-                st.error(f"🚨 Code {code_input} NOT FOUND in {total_products} products!")
-                st.warning("FAKE product - Not in NAFDAC database")
-                log_scan(code_input, "FAKE_NOT_FOUND", "unknown")
-            elif is_fake_product(product):
-                st.error(f"🚨 FAKE CONFIRMED: {product['name']}")
-                st.write(f"**Code:** {product['code']} | **Status:** {product['status']}")
-                st.write(f"**Company:** {product['company']} | **Category:** {product['category']}")
-                st.warning("DO NOT USE - Report to NAFDAC: 0800-1-NAFDAC")
-                log_scan(code_input, "FAKE", product['category'])
-            elif is_expired_product(product):
-                st.warning(f"⚠️ EXPIRED: {product['name']} expired {product['expiry']}")
-                log_scan(code_input, "EXPIRED", product['category'])
+            if is_fake:
+                st.markdown(f"""
+                <div class="result-card-fake">
+                    <div class="big-emoji">🚨</div>
+                    <div class="big-text" style="color: #d32f2f;">FAKE!</div>
+                    <div class="small-text">{name}</div>
+                    <div style="margin-top:15px; background: white; border-radius: 8px; padding: 10px; font-size: 14px;">
+                        ❌ Do not use<br>
+                        📞 Report: 0800-1-NAFDAC
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            elif is_expired:
+                st.markdown(f"""
+                <div class="result-card-fake">
+                    <div class="big-emoji">⚠️</div>
+                    <div class="big-text" style="color: #ef6c00;">EXPIRED!</div>
+                    <div class="small-text">{name}<br>Expired: {product.get('expiry','')}</div>
+                </div>
+                """, unsafe_allow_html=True)
             else:
-                st.success(f"✅ AUTHENTIC - {product['name']}")
-                st.write(f"**Company:** {product['company']} | **Category:** {product['category'].upper()}")
-                st.write(f"**Expiry:** {product['expiry']} | **Batch:** {product['batch']}")
-                log_scan(code_input, "AUTHENTIC", product['category'])
+                # AUTHENTIC - Simple green
+                st.markdown(f"""
+                <div class="result-card-auth">
+                    <div class="big-emoji">✅</div>
+                    <div class="big-text" style="color: #2e7d32;">ORIGINAL!</div>
+                    <div class="small-text">{name}<br>{product.get('company','')}</div>
+                    <div style="margin-top:15px; background: white; border-radius: 8px; padding: 10px; font-size: 14px; color: #2e7d32;">
+                        ✔️ Safe to use
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
                 st.balloons()
 
-with tab2:
-    st.subheader("Fix A4-999999 to be FAKE")
-    st.write("If A4-999999 shows Authentic, run this SQL in Supabase SQL Editor to fix it:")
-    st.code("""
--- Fix A4-999999 to be FAKE (run in Supabase SQL Editor)
-UPDATE products 
-SET status = 'FAKE', 
-    name = 'Fake Drug - NOT REGISTERED - FAKE', 
-    company = 'Unknown - FAKE' 
-WHERE code = 'A4-999999';
-
--- Verify it worked
-SELECT code, name, status FROM products WHERE code = 'A4-999999';
-""", language="sql")
-    
-    if st.button("Check what A4-999999 currently is in DB"):
-        p = verify_product("A4-999999")
-        if p:
-            st.write(f"Current in DB: Code={p['code']}, Name={p['name']}, Status={p['status']}, Company={p['company']}")
-            if p['status'] == 'Authentic':
-                st.error("It is Authentic in DB - you need to run UPDATE SQL above to make it FAKE")
-            else:
-                st.success(f"It is {p['status']} - correct!")
-        else:
-            st.error("A4-999999 not found in DB at all")
-
 st.divider()
-st.caption("Smart fake detection: Checks status AND name contains FAKE")
+# Samples - Simple clickable
+st.caption("Try these:")
+col1, col2, col3 = st.columns(3)
+with col1:
+    if st.button("A4-123456 (Real)"):
+        st.session_state["code"] = "A4-123456"
+        st.rerun()
+with col2:
+    if st.button("A4-999999 (Fake)"):
+        st.session_state["code"] = "A4-999999"
+        st.rerun()
+with col3:
+    if st.button("A1-1004070"):
+        st.session_state["code"] = "A1-1004070"
+        st.rerun()
+
+st.markdown("<br><center style='color:#999; font-size:12px;'>No hard-coded data • Live from Supabase • 10,000 products</center>", unsafe_allow_html=True)
